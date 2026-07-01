@@ -1,0 +1,25 @@
+version: "3.9"
+
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-sk-placeholder}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-3-small}
+      - CHUNK_SIZE=${CHUNK_SIZE:-1000}
+      - CHUNK_OVERLAP=${CHUNK_OVERLAP:-200}
+      - VECTOR_STORE_PATH=${VECTOR_STORE_PATH:-/data/chroma_db}
+      - COLLECTION_NAME=${COLLECTION_NAME:-documents}
+      - MAX_TOKENS=${MAX_TOKENS:-1024}
+      - TEMPERATURE=${TEMPERATURE:-0.0}
+      - TOP_K=${TOP_K:-4}
+    volumes:
+      - chroma_data:/data
+    restart: unless-stopped
+
+volumes:
+  chroma_data:
