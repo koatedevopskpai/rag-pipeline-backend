@@ -3,59 +3,87 @@
 # =============================================================================
 # Context:
 #   pytest configuration, fixtures, and service mocking for the RAG
-#   Pipeline test suite. Uses mocking to avoid real API calls and
-#   vector store dependencies.
+#   Pipeline test suite. Mocks at the OpenAI SDK level so the real
+#   service logic runs but no external API calls are made.
 #
 # Architectural Reasoning:
-#   - Mocking (via unittest.mock.patch) is chosen over test containers
-#     or emulators because:
-#     a) Zero infrastructure: no Docker, no API keys, no network.
-#     b) Deterministic: mocked responses never change, tests never
-#        flake due to network latency or API changes.
-#     c) Fast: full test suite runs in < 100ms.
-#     An integration test suite against real OpenAI + Chroma would take
-#     minutes and require API keys that CI can't provide.
-#   - The mock_services fixture is autouse=True — every test gets it
-#     automatically. This is dangerous if you want real integration
-#     tests (they'd be silently mocked). Mitigation: separate mock
-#     and integration test files if needed later.
-#   - Nested patch context managers mirror the dependency chain:
-#     EmbeddingService → VectorStoreService → LLMService →
-#     RAGPipeline. Each layer's mock feeds into the next. This
-#     ensures the mocked RAGPipeline behaves like the real one,
-#     just without network calls.
-#   - ASGITransport + AsyncClient (httpx) test the FastAPI app
-#     in-process without HTTP. This is faster than spinning up
-#     uvicorn and avoids port conflicts.
+#   - Patching is done at the LangChain import level (OpenAIEmbeddings
+#     and ChatOpenAI) rather than at the dependency injection level.
+#     This means get_rag_pipeline() returns a REAL RAGPipeline with
+#     REAL service instances, but all AI backends are mocked.
+#   - MockChatOpenAI is a purpose-built class (not MagicMock) that
+#     supports LangChain's LCEL | (pipe) operator. MagicMock doesn't
+#     handle __ror__ properly for LCEL chain composition.
+#   - Both embedding.py AND vector_store.py import OpenAIEmbeddings
+#     separately — both import paths are patched.
+#   - lru_cache is cleared after patching so the DI layer creates
+#     fresh services that pick up the mocked constructors.
+#   - ASGITransport + AsyncClient test the FastAPI app in-process.
 #
 # Trade-offs:
-#   - Mocking the full dependency chain means we test the API layer
-#     (routing, validation, error handling) but not the service layer
-#     (actual embedding, retrieval, generation logic). The service
-#     layer unit tests (test_rag_pipeline.py) cover that separately.
-#   - MagicMock returns defaults for all attributes — misspelled
-#     method names silently pass. spec=RAGPipeline on the pipeline
-#     mock (line 55) mitigates this by enforcing the real interface.
+#   - Mocking at the constructor level means service init runs with
+#     fake backends. If init had side effects that depend on API
+#     responses, this would break. For this portfolio, all init is
+#     synchronous and stateless.
+#   - Hardcoded return values limit test scenarios. For deeper
+#     testing, you'd swap the mock class per test case.
 #
 # Opinionated Stance:
-#   FastAPI + mocking = fastest possible test feedback loop. If your
-#   Python test suite takes longer than 1 second, you won't run it
-#   before every commit. This suite runs in < 100ms. I run it
-#   constantly. That's the point.
+#   Mock at the lowest integration point possible. For AI services,
+#   that's the AI SDK client, not your service wrapper. Mocking
+#   at the DI level means you're testing mocks, not your code.
 # =============================================================================
 
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import AsyncGenerator, Generator
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from langchain_core.messages import AIMessage, AIMessageChunk
 
 from src.main import create_app
-from src.models.chat import QueryResponse, SourceDocument
-from src.models.document import IngestResponse
+
+os.environ.setdefault("OPENAI_API_KEY", "sk-test-dummy")
+
+
+class MockChatOpenAI:
+    """Drops-in replacement for langchain_openai.ChatOpenAI.
+
+    LangChain's LCEL pipe (|) operator calls coerce_to_runnable()
+    on the right-hand side. That function checks isinstance(thing, Runnable),
+    callable(thing), or isinstance(thing, dict). __call__ makes this
+    instance callable, so coerce_to_runnable wraps it in RunnableCallable.
+    All invocation methods return predictably canned responses.
+    """
+    def __init__(self, **kwargs):
+        self.model_name = kwargs.get("model", "mock-model")
+
+    def invoke(self, *args, **kwargs):
+        return AIMessage(content="Mocked LLM response")
+
+    async def ainvoke(self, *args, **kwargs):
+        return AIMessage(content="Mocked LLM response")
+
+    async def astream(self, *args, **kwargs):
+        yield AIMessageChunk(content="Mocked")
+
+    __call__ = invoke
+
+
+class MockOpenAIEmbeddings:
+    """Drops-in replacement for langchain_openai.OpenAIEmbeddings."""
+    def __init__(self, **kwargs):
+        self.model = kwargs.get("model", "mock-model")
+
+    def embed_query(self, text: str) -> list[float]:
+        return [0.1] * 1536
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [[0.1] * 1536 for _ in texts]
 
 
 @pytest.fixture(scope="session")
@@ -66,60 +94,31 @@ def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
 
 
 @pytest.fixture(autouse=True)
-def mock_services():
-    with patch("src.services.embedding.EmbeddingService") as mock_embed:
-        embed_instance = MagicMock()
-        embed_instance.embed_text.return_value = [0.1] * 1536
-        embed_instance.embed_texts.return_value = [[0.1] * 1536]
-        embed_instance.model_name = "mock-model"
-        mock_embed.return_value = embed_instance
+def mock_ai_backends():
+    """Mock OpenAI constructors so no real API calls are made.
 
-        with patch("src.services.vector_store.VectorStoreService") as mock_vs:
-            vs_instance = MagicMock()
-            vs_instance.collection_count = 0
-            vs_instance.add_documents = MagicMock()
-            vs_instance.similarity_search = MagicMock(
-                return_value=[(MagicMock(page_content="Mocked content", metadata={"source": "test"}), 0.95)]
-            )
-            mock_vs.return_value = vs_instance
+    Patches both import paths for OpenAIEmbeddings (embedding.py
+    and vector_store.py each import it independently).
+    """
+    patcher_embed = patch("src.services.embedding.OpenAIEmbeddings", MockOpenAIEmbeddings)
+    patcher_vs_embed = patch("src.services.vector_store.OpenAIEmbeddings", MockOpenAIEmbeddings)
+    patcher_llm = patch("src.services.llm_service.ChatOpenAI", MockChatOpenAI)
 
-            with patch("src.services.llm_service.LLMService") as mock_llm:
-                llm_instance = MagicMock()
-                llm_instance.generate.return_value = "Mocked answer"
-                llm_instance.generate_with_context.return_value = "Mocked answer about Python."
-                llm_instance.model_name = "mock-model"
+    patcher_embed.start()
+    patcher_vs_embed.start()
+    patcher_llm.start()
 
-                async def mock_stream():
-                    yield MagicMock(content="Mocked")
+    from src.core import dependencies as deps
+    deps.get_embedding_service.cache_clear()
+    deps.get_vector_store.cache_clear()
+    deps.get_llm_service.cache_clear()
+    deps.get_rag_pipeline.cache_clear()
 
-                llm_instance.astream_with_context = MagicMock(return_value=mock_stream())
-                mock_llm.return_value = llm_instance
+    yield
 
-                with patch("src.core.dependencies.get_rag_pipeline") as mock_get_pipeline:
-                    from src.services.rag_pipeline import RAGPipeline
-
-                    pipeline_instance = MagicMock(spec=RAGPipeline)
-                    pipeline_instance.ingest_text.return_value = IngestResponse(
-                        status="success", chunks=3, document_id="test-doc-id"
-                    )
-                    pipeline_instance.ingest_url.return_value = IngestResponse(
-                        status="success", chunks=5, document_id="test-url-id"
-                    )
-                    pipeline_instance.ask.return_value = QueryResponse(
-                        answer="Python was created by Guido van Rossum.",
-                        sources=[
-                            SourceDocument(
-                                content="Python was created by Guido van Rossum in 1991.",
-                                metadata={"source": "test"},
-                                score=0.95,
-                            )
-                        ],
-                        tokens_used=42,
-                    )
-                    pipeline_instance.collection_size = 3
-                    mock_get_pipeline.return_value = pipeline_instance
-
-                    yield
+    patcher_embed.stop()
+    patcher_vs_embed.stop()
+    patcher_llm.stop()
 
 
 @pytest.fixture
