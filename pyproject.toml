@@ -1,3 +1,43 @@
+# =============================================================================
+# pyproject.toml — RAG Pipeline Backend
+# =============================================================================
+# Context:
+#   Standard Python project configuration adopting PEP 621 (pyproject.toml)
+#   over legacy setup.py/setup.cfg. This is the single source of truth for
+#   dependencies, build configuration, and tool settings.
+#
+# Architectural Reasoning:
+#   - PEP 621 is the modern Python standard. No setup.py means no executable
+#     code in build configuration — purely declarative.
+#   - Dependencies are pinned to major versions (>=) rather than exact locks
+#     because this is a portfolio project meant to be cloned and run on any
+#     machine. Exact pins would cause unnecessary friction.
+#   - LangChain ecosystem chosen over raw OpenAI/Chroma calls because:
+#     a) It provides a unified abstraction layer — swapping vector stores or
+#        LLM providers requires zero code changes.
+#     b) It handles prompt templating, chain composition, and streaming
+#        out of the box.
+#     c) It's the industry standard for RAG systems, which signals to
+#        hiring managers that I know the ecosystem.
+#   - ChromaDB pinned at >=1.5 because earlier versions had breaking changes
+#     in their persistence API.
+#   - beautifulsoup4 + lxml included for URL ingestion (WebBaseLoader).
+#     Without them, the URL endpoint would fail silently.
+#
+# Trade-offs:
+#   - LangChain adds ~50MB to the dependency tree. For a production microservice
+#     this might be heavy, but for interview demonstration the abstraction
+#     value far outweighs the size cost.
+#   - No lockfile (no pip freeze > requirements.txt in CI). This means builds
+#     can diverge. Acceptable for a portfolio — for production, add
+#     pip-compile or poetry.lock.
+#
+# Opinionated Stance:
+#   If you're building a RAG system from scratch without LangChain, you're
+#   wasting time reinventing prompt templates, retry logic, and chain
+#   composition. LangChain is the right call. Period.
+# =============================================================================
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
