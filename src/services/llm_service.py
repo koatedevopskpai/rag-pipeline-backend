@@ -1,3 +1,46 @@
+# =============================================================================
+# src/services/llm_service.py — LLM Service (Answer Generation)
+# =============================================================================
+# Context:
+#   Wraps LangChain's ChatOpenAI to generate answers. The final step in
+#   the RAG pipeline — retrieved context + user question → LLM → answer.
+#
+# Architectural Reasoning:
+#   - ChatOpenAI from langchain-openai, not direct OpenAI SDK calls.
+#     Same abstraction principle as the embedding service: swap providers
+#     by changing one import and the model name in an env var.
+#   - generate_with_context uses LangChain's ChatPromptTemplate + LCEL
+#     (LangChain Expression Language) pipeline: prompt_template | llm.
+#     This is the idiomatic LangChain way — composable, testable, and
+#     trivially extensible (add a retriever step, add a parser step, etc.).
+#   - astream_with_context yields chunks asynchronously for SSE streaming.
+#     This is the difference between a toy RAG and a production RAG:
+#     users won't wait 5-10 seconds for a full response. Streaming is
+#     table stakes.
+#   - SYSTEM_PROMPT is a class-level constant enforcing grounded answers.
+#     "If the context does not contain enough information... say so."
+#     This is the most important prompt engineering decision in the
+#     entire system. Without it, the LLM will hallucinate answers from
+#     its training data, defeating the purpose of RAG.
+#
+# Trade-offs:
+#   - ChatPromptTemplate is recreated on every generate_with_context call.
+#     In production, you'd cache the template. For this portfolio, the
+#     overhead is negligible (~0.01ms).
+#   - No retry logic. If the LLM API returns a 429 (rate limit) or 500,
+#     the request fails. In production, add tenacity retries with
+#     exponential backoff.
+#   - No fallback model. If gpt-4o-mini is down, the system is down.
+#     In production, you'd chain a fallback to gpt-3.5-turbo or a
+#     local model.
+#
+# Opinionated Stance:
+#   The system prompt is the single most important line of code in any
+#   RAG system. Get it wrong and your AI confidently lies. Get it right
+#   and it says "I don't know" when it should. Mine says the latter.
+#   This is non-negotiable for any system that claims to be grounded.
+# =============================================================================
+
 from __future__ import annotations
 
 import logging
