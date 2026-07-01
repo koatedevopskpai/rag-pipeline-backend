@@ -1,3 +1,42 @@
+# =============================================================================
+# src/api/query.py — RAG Query Endpoints (Ask + Stream)
+# =============================================================================
+# Context:
+#   HTTP interface for asking questions against the ingested knowledge base.
+#   Supports both synchronous (POST /ask) and streaming (POST /stream) modes.
+#
+# Architectural Reasoning:
+#   - POST /ask returns a complete QueryResponse with answer + sources +
+#     token count. This is the straightforward "give me the answer" path
+#     that most clients use.
+#   - POST /stream uses Server-Sent Events (SSE) for real-time token
+#     delivery. SSE chosen over WebSocket because:
+#     a) SSE is unidirectional (server → client), which is all we need.
+#     b) SSE works over standard HTTP, no special proxy config needed.
+#     c) SSE auto-reconnects in browsers.
+#     WebSocket would be overkill for token streaming.
+#   - The stream format is `data: {json}\n\n` (standard SSE). Each chunk
+#     contains one token. The final messages include sources array and
+#     [DONE] signal. This lets the client progressively render tokens
+#     while waiting for the full source attribution.
+#   - POST (not GET) because the request body contains a question string
+#     that can exceed URL length limits. GET with query params would
+#     truncate long questions and expose them in server logs.
+#
+# Trade-offs:
+#   - SSE streams have no binary support. If we needed to stream images
+#     or structured data alongside tokens, WebSocket would be required.
+#   - No request ID or correlation ID in responses. For debugging across
+#     distributed systems, you'd add a request_id header. For portfolio
+#     scope, it's unnecessary complexity.
+#
+# Opinionated Stance:
+#   If your RAG demo doesn't stream tokens, hiring managers will notice.
+#   It's the single most visible UX differentiator between a toy and a
+#   production system. SSE is trivial to implement (see below: ~20 lines)
+#   and makes your demo look 10x more polished.
+# =============================================================================
+
 from __future__ import annotations
 
 import json
