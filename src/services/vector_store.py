@@ -1,3 +1,46 @@
+# =============================================================================
+# src/services/vector_store.py — Chroma Vector Store Service
+# =============================================================================
+# Context:
+#   Wraps LangChain's Chroma integration for document storage and semantic
+#   retrieval. Chroma is an open-source embedding database — the brain of
+#   the RAG system where all ingested document chunks live.
+#
+# Architectural Reasoning:
+#   - Chroma over Pinecone/Qdrant/Weaviate: zero infrastructure. Chroma
+#     runs as an embedded (in-process) database. No Docker, no cloud
+#     account, no API key. The reviewer clones the repo and it just works.
+#     For an interview portfolio, this is the killer feature.
+#   - persist() is called after every add_documents() call. Chroma's
+#     auto-persist flag is unreliable across versions. Explicit persist
+#     ensures data survives a restart. The try/except handles the fact
+#     that newer Chroma versions deprecated the persist() method
+#     (in-memory mode doesn't need it).
+#   - similarity_search_with_relevance_scores returns (Document, score)
+#     tuples rather than plain Documents. The score is essential for
+#     source attribution (see chat.py model). Without it, you can't
+#     distinguish a 0.95-relevant result from a 0.05-irrelevant one.
+#
+# Trade-offs:
+#   - In-process Chroma means the vector store doesn't survive container
+#     restarts unless persist_directory is on a volume mount. The
+#     docker-compose.yml handles this with a named volume.
+#   - Chroma's relevance scores are cosine similarity (0-1 range), but
+#     the raw values vary by embedding model. There's no universal
+#     "0.7 means relevant" threshold — you must tune per deployment.
+#   - delete_collection() is destructive but useful for demos. In
+#     production, you'd version collections rather than delete them.
+#   - collection_count accesses a private attribute (_collection).
+#     Chroma's public API doesn't expose count(). This is fragile —
+#     a Chroma upgrade could break it. The try/except catches that.
+#
+# Opinionated Stance:
+#   For interview portfolios, start with Chroma. It removes the
+#   infrastructure barrier that stops reviewers from running your code.
+#   When you go to production, swap to Qdrant or Pinecone for scale.
+#   The LangChain abstraction makes this a one-line change.
+# =============================================================================
+
 from __future__ import annotations
 
 import logging
