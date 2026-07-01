@@ -1,3 +1,49 @@
+# =============================================================================
+# tests/conftest.py — Test Configuration and Fixtures
+# =============================================================================
+# Context:
+#   pytest configuration, fixtures, and service mocking for the RAG
+#   Pipeline test suite. Uses mocking to avoid real API calls and
+#   vector store dependencies.
+#
+# Architectural Reasoning:
+#   - Mocking (via unittest.mock.patch) is chosen over test containers
+#     or emulators because:
+#     a) Zero infrastructure: no Docker, no API keys, no network.
+#     b) Deterministic: mocked responses never change, tests never
+#        flake due to network latency or API changes.
+#     c) Fast: full test suite runs in < 100ms.
+#     An integration test suite against real OpenAI + Chroma would take
+#     minutes and require API keys that CI can't provide.
+#   - The mock_services fixture is autouse=True — every test gets it
+#     automatically. This is dangerous if you want real integration
+#     tests (they'd be silently mocked). Mitigation: separate mock
+#     and integration test files if needed later.
+#   - Nested patch context managers mirror the dependency chain:
+#     EmbeddingService → VectorStoreService → LLMService →
+#     RAGPipeline. Each layer's mock feeds into the next. This
+#     ensures the mocked RAGPipeline behaves like the real one,
+#     just without network calls.
+#   - ASGITransport + AsyncClient (httpx) test the FastAPI app
+#     in-process without HTTP. This is faster than spinning up
+#     uvicorn and avoids port conflicts.
+#
+# Trade-offs:
+#   - Mocking the full dependency chain means we test the API layer
+#     (routing, validation, error handling) but not the service layer
+#     (actual embedding, retrieval, generation logic). The service
+#     layer unit tests (test_rag_pipeline.py) cover that separately.
+#   - MagicMock returns defaults for all attributes — misspelled
+#     method names silently pass. spec=RAGPipeline on the pipeline
+#     mock (line 55) mitigates this by enforcing the real interface.
+#
+# Opinionated Stance:
+#   FastAPI + mocking = fastest possible test feedback loop. If your
+#   Python test suite takes longer than 1 second, you won't run it
+#   before every commit. This suite runs in < 100ms. I run it
+#   constantly. That's the point.
+# =============================================================================
+
 from __future__ import annotations
 
 import asyncio
