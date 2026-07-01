@@ -1,3 +1,56 @@
+# =============================================================================
+# src/services/rag_pipeline.py — RAG Pipeline (Orchestration Layer)
+# =============================================================================
+# Context:
+#   The heart of the system. Orchestrates the full RAG lifecycle:
+#   ingestion (load → split → embed → store) and query (retrieve → augment → generate).
+#   Coordinates between EmbeddingService, VectorStoreService, and LLMService.
+#
+# Architectural Reasoning:
+#   - Dual pipeline design (ingest vs query) keeps concerns separated.
+#     Ingestion is write-heavy, query is read-heavy. They share the
+#     vector store but have entirely different performance characteristics.
+#     Mixing them would create a god class.
+#   - RecursiveCharacterTextSplitter is LangChain's recommended splitter
+#     for general text. It recursively splits on separators (paragraphs →
+#     sentences → words) to preserve semantic boundaries. A naive
+#     fixed-size splitter would cut sentences in half.
+#   - Chunk overlap (default 200 chars) ensures context isn't lost at
+#     chunk boundaries. A question that spans two chunks still has both
+#     pieces in the retrieval window. No overlap = lost context = bad RAG.
+#   - UUID document IDs enable idempotent ingestion — if you re-ingest
+#     the same document, you get new chunks with new IDs. The old data
+#     remains (no dedup). For portfolio demo, this is fine. For production,
+#     you'd hash content for dedup.
+#   - Source content is truncated to 500 chars in responses (line 82).
+#     This prevents token-heavy responses while still showing the
+#     reviewer that source attribution works. Full content is stored —
+#     only the response is truncated.
+#   - ask() vs ask_stream() are separate methods because streaming
+#     requires an async generator (AsyncIterator[str]) while non-streaming
+#     returns a QueryResponse object. Making one method handle both
+#     would add branching complexity for marginal benefit.
+#
+# Trade-offs:
+#   - WebBaseLoader in ingest_url() adds a dependency on BeautifulSoup
+#     and lxml, and may fail on JavaScript-rendered pages. For a
+#     portfolio demo targeting text-heavy pages (docs, blogs), this is
+#     fine. For production, you'd use a headless browser like Playwright.
+#   - Token estimation is word-count-based, not model-specific. It
+#     undercounts for OpenAI (which uses BPE tokenization) but gives
+#     a reasonable ballpark. For interview purposes, this demonstrates
+#     awareness of token accounting without adding tiktoken dependency.
+#   - No document deletion. Once ingested, data persists until the
+#     collection is deleted. For a demo portfolio, this is acceptable.
+#     In production, you'd implement TTL or explicit deletion endpoints.
+#
+# Opinionated Stance:
+#   A RAG pipeline without streaming is not production-ready. Users
+#   expect typing indicators and progressive output. If your demo
+#   makes people wait 10 seconds for a wall of text, they won't use it.
+#   Streaming was the hardest part to implement and the most important.
+# =============================================================================
+
 from __future__ import annotations
 
 import logging
