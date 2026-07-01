@@ -1,3 +1,44 @@
+# =============================================================================
+# tests/test_rag_pipeline.py — RAG Pipeline Unit Tests
+# =============================================================================
+# Context:
+#   Unit tests for the RAGPipeline orchestration layer and Pydantic models.
+#   Tests run against mocked services (no real API calls needed).
+#
+# Architectural Reasoning:
+#   - Tests are split into pipeline behavior (test_ingest_and_retrieve,
+#     test_format_context) and validation (test_empty_question_raises,
+#     test_empty_text_raises). This separation makes it clear which
+#     tests cover functionality vs defensive coding.
+#   - test_ingest_response_model and test_source_document_model are
+#     pure model tests — no mocking needed. They validate that
+#     Pydantic constructs the correct objects. These are fast (~1ms)
+#     and catch serialization bugs that would otherwise surface as
+#     API 500 errors.
+#   - The pipeline fixture calls get_rag_pipeline() which returns a
+#     MagicMock (due to the autouse mock_services fixture in conftest).
+#     This means all pipeline method calls exercise the mock interface
+#     without executing real logic. The assertions verify that the mock
+#     was called correctly and returned the expected shape.
+#
+# Trade-offs:
+#   - No integration tests that call real services. The trade-off is
+#     speed + portability vs confidence. For a portfolio project,
+#     mocked tests prove the architecture is sound. For production,
+#     add a separate integration test suite with real Chroma + a
+#     local embedding model.
+#   - The pipeline fixture interacts with the autouse mock. If the
+#     mock setup changes, these tests break silently (not with
+#     import errors). Using spec=RAGPipeline in conftest.py mitigates
+#     this by enforcing interface conformance.
+#
+# Opinionated Stance:
+#   Unit tests test YOUR logic, not your dependencies' logic. Mock
+#   everything external. If your test fails because OpenAI changed
+#   their API, that's an integration test, not a unit test. Keep
+#   them separate. This file contains only unit tests.
+# =============================================================================
+
 from __future__ import annotations
 
 import pytest
