@@ -1,3 +1,46 @@
+# =============================================================================
+# src/main.py — FastAPI Application Entry Point
+# =============================================================================
+# Context:
+#   Application factory and module-level app instance. The entry point
+#   for `uvicorn src.main:app`.
+#
+# Architectural Reasoning:
+#   - create_app() factory pattern enables testability. Tests import
+#     create_app() and get a fresh app instance without module-level
+#     side effects. Without this, test state would leak across cases.
+#   - lifespan context manager replaces the deprecated on_event API.
+#     FastAPI 0.110+ recommends lifespan over startup/shutdown events
+#     because lifespan works correctly with background tasks and
+#     exception handling. on_event swallows exceptions.
+#   - CORS middleware with allow_origins=["*"] is intentionally
+#     permissive. This is a demo API meant to be accessed from any
+#     frontend (Streamlit, React, curl). In production, restrict to
+#     specific origins.
+#   - Module-level `app = create_app()` (line 51) is what uvicorn
+#     imports. It's separate from the factory so that tests can call
+#     create_app() independently without hitting the module-level app.
+#
+# Trade-offs:
+#   - CORS allow_credentials=True with allow_origins=["*"] is technically
+#     invalid (the browser spec requires explicit origins for credentialed
+#     requests). FastAPI/CORSMiddleware handles this gracefully by not
+#     sending the Access-Control-Allow-Origin: * header when credentials
+#     are involved. For this demo's scope, it works. For production,
+#     set explicit origins.
+#   - No middleware for request logging, metrics, or rate limiting. In
+#     production, you'd add Prometheus middleware + slow-request
+#     monitoring. For portfolio, the signal-to-noise ratio favors
+#     simplicity.
+#
+# Opinionated Stance:
+#   Never put route definitions in main.py. If your main.py is longer
+#   than 50 lines, you've failed at separation of concerns. Routes
+#   belong in router modules, configuration belongs in settings,
+#   and main.py is just the glue. This file is 51 lines — right at
+#   the limit.
+# =============================================================================
+
 from __future__ import annotations
 
 import logging
