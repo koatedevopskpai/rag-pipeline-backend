@@ -1,5 +1,6 @@
 # RAG Pipeline Backend
 
+![CI](https://github.com/koate-kpai/rag-pipeline-backend/actions/workflows/ci.yml/badge.svg)
 ![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.110%2B-009688?logo=fastapi)
 ![LangChain](https://img.shields.io/badge/LangChain-1.0%2B-1C3C3C?logo=langchain)

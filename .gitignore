@@ -45,3 +45,6 @@ coverage.xml
 
 # Pytest
 .pytest_cache/
+
+# Internal job-prep docs (not for public repo)
+Job_Preparation_*.docx
