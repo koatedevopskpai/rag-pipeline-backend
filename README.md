@@ -1,12 +1,12 @@
 # RAG Pipeline Backend
 
-![CI](https://github.com/koate-kpai/rag-pipeline-backend/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/koatedevopskpai/rag-pipeline-backend/actions/workflows/ci.yml/badge.svg)
 ![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.110%2B-009688?logo=fastapi)
 ![LangChain](https://img.shields.io/badge/LangChain-1.0%2B-1C3C3C?logo=langchain)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-A production-grade **Retrieval-Augmented Generation (RAG)** backend built with FastAPI, LangChain, Chroma DB, and OpenAI-compatible APIs. Ingests documents, generates embeddings, stores them in a vector database, and answers questions using an LLM grounded in retrieved context.
+A reference **Retrieval-Augmented Generation (RAG)** backend built with FastAPI, LangChain, Chroma DB, and OpenAI-compatible APIs. Ingests documents, generates embeddings, stores them in a vector database, and answers questions using an LLM grounded in retrieved context.
 
 ## Architecture
 
@@ -48,7 +48,7 @@ A production-grade **Retrieval-Augmented Generation (RAG)** backend built with F
 ### Installation
 
 ```bash
-git clone https://github.com/koate-kpai/rag-pipeline-backend.git
+git clone https://github.com/koatedevopskpai/rag-pipeline-backend.git
 cd rag-pipeline-backend
 
 python -m venv venv
@@ -172,3 +172,10 @@ This project demonstrates:
 ## License
 
 MIT
+
+
+## Claim review — 18 October 2026
+
+See [verification and limits](evidence/W5-01.md) for the source revision, claim
+classification and observed CI status. Wording corrections do not establish a
+new deployment, passing test suite or production operation.

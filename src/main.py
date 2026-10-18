@@ -72,7 +72,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="RAG Pipeline Backend",
         version="1.0.0",
-        description="Production-grade RAG Pipeline Backend with FastAPI and LangChain",
+        description="Reference RAG Pipeline Backend with FastAPI and LangChain",
         lifespan=lifespan,
     )
 
